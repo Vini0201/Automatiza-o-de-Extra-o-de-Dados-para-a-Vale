@@ -1,0 +1,95 @@
+import os
+import fitz  # PyMuPDF
+import pandas as pd
+from openpyxl import load_workbook, Workbook
+
+def extract_numbers_from_pdf(pdf_path):
+    # Abre o arquivo PDF
+    pdf_document = fitz.open(pdf_path)
+
+    # Inicializa um dicionário para armazenar os números extraídos
+    extracted_numbers = {
+        "Nota Fiscal": None,
+        "Data de Emissão": None,
+        "Valor Total da NF": None,
+        "Quantidade": None,
+        "Coriolis": None,
+        "PCS": []
+    }
+
+    # Itera por cada página
+    for page_num in range(len(pdf_document)):
+        page = pdf_document.load_page(page_num)
+        text = page.get_text("text")
+
+        # Adiciona uma linha para imprimir o texto extraído
+        print(f"Texto extraído da página {page_num + 1}:\n{text}\n")
+
+        # Extrai os números com base nas posições especificadas
+        lines = text.split('\n')
+        for i, line in enumerate(lines):
+            if "No. " in line:
+                extracted_numbers["Nota Fiscal"] = line.split("No.")[1].strip()
+            elif "DATA DA EMISSÃO" in line:
+                extracted_numbers["Data de Emissão"] = lines[i + 1].strip()
+            elif "VALOR TOTAL DA NF" in line:
+                extracted_numbers["Valor Total da NF"] = lines[i + 1].strip()
+            elif "QTDE." in line:
+                extracted_numbers["Quantidade"] = lines[i + 14].strip()
+            elif "CORIOLIS:" in line:
+                extracted_numbers["Coriolis"] = line.split("CORIOLIS:")[1].strip()
+            elif "RICMS/MA" in line:
+                if i + 1 < len(lines) and "PCS:" in lines[i + 1]:
+                    pcs_line = lines[i + 1]
+                    pcs_value = pcs_line.split("PCS:")[1].split()[0].strip() + " Kcal/m³"
+                    extracted_numbers["PCS"].append(pcs_value)
+
+    return extracted_numbers
+
+def save_to_excel(data, excel_path):
+    # Carrega o arquivo Excel existente ou cria um novo
+    if os.path.exists(excel_path):
+        workbook = load_workbook(excel_path)
+    else:
+        workbook = Workbook()
+        workbook.active.append(["Nota Fiscal", "Data de Emissão", "Valor Total da NF", "Quantidade", "Coriolis", "PCS"])
+
+    sheet = workbook.active
+    # Encontra a próxima linha disponível a partir da linha 12
+    row = 12
+    while sheet.cell(row=row, column=3).value is not None:
+        row += 1
+
+    # Converte o dicionário para uma lista de valores
+    values = list(data.values())
+
+    # Função para converter valores para o tipo adequado
+    def convert_value(value):
+        try:
+            return float(value.replace(',', '').replace('R$', '').strip())
+        except ValueError:
+            return value
+
+    # Salva os valores nas células a partir da coluna C
+    for i, value in enumerate(values[:-1]):  # Exclui a lista de PCS
+        sheet.cell(row=row, column=3 + i, value=convert_value(value))
+
+    # Salva os valores de PCS na coluna H (índice 8)
+    pcs_values_str = " ".join(values[-1]) if values[-1] else ""
+    sheet.cell(row=row, column=8, value=pcs_values_str)
+
+    # Salva o arquivo Excel
+    workbook.save(excel_path)
+
+# Caminhos para os arquivos PDF e Excel
+pdf_directory = "C:/Users/Vinicius.cunha/OneDrive - Eneva S.A/Área de Trabalho/PDFs"
+excel_path = r"C:\Users\Vinicius.cunha\OneDrive - Eneva S.A\FATURAMENTO VALE - BACK\2025\Resumo_Faturamento VALE_JUL25.xlsx"
+
+# Itera sobre todos os arquivos PDF no diretório
+for pdf_filename in os.listdir(pdf_directory):
+    if pdf_filename.endswith(".pdf"):
+        pdf_path = os.path.join(pdf_directory, pdf_filename)
+        extracted_numbers = extract_numbers_from_pdf(pdf_path)
+        save_to_excel(extracted_numbers, excel_path)
+
+print("Os números foram salvos no Excel.")
